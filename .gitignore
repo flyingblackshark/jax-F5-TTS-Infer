@@ -316,3 +316,6 @@ docs/build/
 site/
 
 jax-F5-TTS-Infer.code-workspace
+__pycache__/
+__pycache__
+./__pycache__

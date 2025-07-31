@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from typing import Optional, Union
 import numpy as np
@@ -626,67 +626,7 @@ async def health_check():
     return {"status": "healthy", "model_loaded": global_transformer is not None}
 
 @app.post("/generate", response_model=TTSResponse)
-async def generate_tts(
-    ref_text: str = Form(...),
-    gen_text: str = Form(...),
-    ref_audio_base64: str = Form(...),
-    num_inference_steps: int = Form(50),
-    guidance_scale: float = Form(2.0),
-    speed_factor: float = Form(1.0),
-    use_sway_sampling: bool = Form(False)
-):
-    """Generate TTS audio from text and reference audio"""
-    try:
-        # Decode base64 audio
-        try:
-            audio_bytes = base64.b64decode(ref_audio_base64)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid base64 audio data: {str(e)}")
-        
-        # Save to temporary file and load with librosa
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
-            tmp_file.write(audio_bytes)
-            tmp_file_path = tmp_file.name
-        
-        try:
-            ref_audio_data, ref_sr = librosa.load(tmp_file_path, sr=None, mono=True)
-        finally:
-            os.unlink(tmp_file_path)  # Clean up temp file
-        
-        # Generate audio
-        sample_rate, generated_audio, generation_time = generate_audio_api(
-            ref_text=ref_text,
-            gen_text=gen_text,
-            ref_audio=ref_audio_data,
-            ref_sr=ref_sr,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-            speed_factor=speed_factor,
-            use_sway_sampling=use_sway_sampling
-        )
-        
-        # Convert audio to base64
-        buffer = io.BytesIO()
-        sf.write(buffer, generated_audio, sample_rate, format='WAV')
-        audio_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-        
-        duration = len(generated_audio) / sample_rate
-        
-        return TTSResponse(
-            audio_base64=audio_base64,
-            sample_rate=sample_rate,
-            duration=duration,
-            generation_time=generation_time
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        max_logging.error(f"Error during TTS generation: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-@app.post("/generate_json", response_model=TTSResponse)
-async def generate_tts_json(request: TTSRequest):
+async def generate_tts(request: TTSRequest):
     """Generate TTS audio using JSON request body"""
     try:
         # Decode base64 audio

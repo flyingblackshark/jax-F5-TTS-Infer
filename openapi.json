@@ -1,0 +1,335 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "F5-TTS Inference API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Root",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate": {
+      "post": {
+        "summary": "Generate Tts",
+        "description": "Generate TTS audio from text and reference audio",
+        "operationId": "generate_tts_generate_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_generate_tts_generate_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TTSResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate_json": {
+      "post": {
+        "summary": "Generate Tts Json",
+        "description": "Generate TTS audio using JSON request body",
+        "operationId": "generate_tts_json_generate_json_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_generate_tts_json_generate_json_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TTSResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/download/{audio_base64}": {
+      "get": {
+        "summary": "Download Audio",
+        "description": "Download generated audio file",
+        "operationId": "download_audio_download__audio_base64__get",
+        "parameters": [
+          {
+            "name": "audio_base64",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Audio Base64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_generate_tts_generate_post": {
+        "properties": {
+          "ref_text": {
+            "type": "string",
+            "title": "Ref Text"
+          },
+          "gen_text": {
+            "type": "string",
+            "title": "Gen Text"
+          },
+          "ref_audio": {
+            "type": "string",
+            "format": "binary",
+            "title": "Ref Audio"
+          },
+          "num_inference_steps": {
+            "type": "integer",
+            "title": "Num Inference Steps",
+            "default": 50
+          },
+          "guidance_scale": {
+            "type": "number",
+            "title": "Guidance Scale",
+            "default": 2.0
+          },
+          "speed_factor": {
+            "type": "number",
+            "title": "Speed Factor",
+            "default": 1.0
+          },
+          "use_sway_sampling": {
+            "type": "boolean",
+            "title": "Use Sway Sampling",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "ref_text",
+          "gen_text",
+          "ref_audio"
+        ],
+        "title": "Body_generate_tts_generate_post"
+      },
+      "Body_generate_tts_json_generate_json_post": {
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/TTSRequest"
+          },
+          "ref_audio": {
+            "type": "string",
+            "format": "binary",
+            "title": "Ref Audio"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request",
+          "ref_audio"
+        ],
+        "title": "Body_generate_tts_json_generate_json_post"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "TTSRequest": {
+        "properties": {
+          "ref_text": {
+            "type": "string",
+            "title": "Ref Text"
+          },
+          "gen_text": {
+            "type": "string",
+            "title": "Gen Text"
+          },
+          "num_inference_steps": {
+            "type": "integer",
+            "title": "Num Inference Steps",
+            "default": 50
+          },
+          "guidance_scale": {
+            "type": "number",
+            "title": "Guidance Scale",
+            "default": 2.0
+          },
+          "speed_factor": {
+            "type": "number",
+            "title": "Speed Factor",
+            "default": 1.0
+          },
+          "use_sway_sampling": {
+            "type": "boolean",
+            "title": "Use Sway Sampling",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "ref_text",
+          "gen_text"
+        ],
+        "title": "TTSRequest"
+      },
+      "TTSResponse": {
+        "properties": {
+          "audio_base64": {
+            "type": "string",
+            "title": "Audio Base64"
+          },
+          "sample_rate": {
+            "type": "integer",
+            "title": "Sample Rate"
+          },
+          "duration": {
+            "type": "number",
+            "title": "Duration"
+          },
+          "generation_time": {
+            "type": "number",
+            "title": "Generation Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio_base64",
+          "sample_rate",
+          "duration",
+          "generation_time"
+        ],
+        "title": "TTSResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

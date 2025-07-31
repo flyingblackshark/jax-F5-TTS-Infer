@@ -1,0 +1,11 @@
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.0.0
+numpy>=1.24.0
+librosa>=0.10.0
+soundfile>=0.12.0
+jax>=0.4.0
+flax>=0.7.0
+# maxdiffusion package should be installed from the jax-F5-TTS project
+# jax_vocos should be installed separately

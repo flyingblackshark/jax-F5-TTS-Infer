@@ -40,52 +40,13 @@
     "/generate": {
       "post": {
         "summary": "Generate Tts",
-        "description": "Generate TTS audio from text and reference audio",
+        "description": "Generate TTS audio using JSON request body",
         "operationId": "generate_tts_generate_post",
         "requestBody": {
           "content": {
-            "multipart/form-data": {
+            "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Body_generate_tts_generate_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TTSResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/generate_json": {
-      "post": {
-        "summary": "Generate Tts Json",
-        "description": "Generate TTS audio using JSON request body",
-        "operationId": "generate_tts_json_generate_json_post",
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_generate_tts_json_generate_json_post"
+                "$ref": "#/components/schemas/TTSRequest"
               }
             }
           },
@@ -156,7 +117,20 @@
   },
   "components": {
     "schemas": {
-      "Body_generate_tts_generate_post": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "TTSRequest": {
         "properties": {
           "ref_text": {
             "type": "string",
@@ -166,10 +140,9 @@
             "type": "string",
             "title": "Gen Text"
           },
-          "ref_audio": {
+          "ref_audio_base64": {
             "type": "string",
-            "format": "binary",
-            "title": "Ref Audio"
+            "title": "Ref Audio Base64"
           },
           "num_inference_steps": {
             "type": "integer",
@@ -196,76 +169,7 @@
         "required": [
           "ref_text",
           "gen_text",
-          "ref_audio"
-        ],
-        "title": "Body_generate_tts_generate_post"
-      },
-      "Body_generate_tts_json_generate_json_post": {
-        "properties": {
-          "request": {
-            "$ref": "#/components/schemas/TTSRequest"
-          },
-          "ref_audio": {
-            "type": "string",
-            "format": "binary",
-            "title": "Ref Audio"
-          }
-        },
-        "type": "object",
-        "required": [
-          "request",
-          "ref_audio"
-        ],
-        "title": "Body_generate_tts_json_generate_json_post"
-      },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "type": "array",
-            "title": "Detail"
-          }
-        },
-        "type": "object",
-        "title": "HTTPValidationError"
-      },
-      "TTSRequest": {
-        "properties": {
-          "ref_text": {
-            "type": "string",
-            "title": "Ref Text"
-          },
-          "gen_text": {
-            "type": "string",
-            "title": "Gen Text"
-          },
-          "num_inference_steps": {
-            "type": "integer",
-            "title": "Num Inference Steps",
-            "default": 50
-          },
-          "guidance_scale": {
-            "type": "number",
-            "title": "Guidance Scale",
-            "default": 2.0
-          },
-          "speed_factor": {
-            "type": "number",
-            "title": "Speed Factor",
-            "default": 1.0
-          },
-          "use_sway_sampling": {
-            "type": "boolean",
-            "title": "Use Sway Sampling",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "ref_text",
-          "gen_text"
+          "ref_audio_base64"
         ],
         "title": "TTSRequest"
       },

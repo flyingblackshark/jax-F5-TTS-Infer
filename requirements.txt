@@ -6,13 +6,6 @@ pydantic>=2.0.0
 numpy>=1.24.0
 librosa>=0.10.0
 soundfile>=0.12.0
-
-flax>=0.7.0
-# maxdiffusion package should be installed from the jax-F5-TTS project
-git+https://github.com/flyingblackshark/jax-vocos
-git+https://github.com/flyingblackshark/jax-F5-TTS
-
-
 jax>=0.6.2
 jaxlib>=0.4.30
 grain
@@ -52,3 +45,9 @@ audax
 jieba
 pypinyin
 jax_vocos
+flax>=0.7.0
+# maxdiffusion package should be installed from the jax-F5-TTS project
+git+https://github.com/flyingblackshark/jax-vocos
+git+https://github.com/flyingblackshark/jax-F5-TTS
+
+

@@ -1,3 +1,4 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
@@ -11,7 +12,7 @@ flax>=0.7.0
 git+https://github.com/flyingblackshark/jax-vocos
 git+https://github.com/flyingblackshark/jax-F5-TTS
 
---extra-index-url https://download.pytorch.org/whl/cpu
+
 jax>=0.6.2
 jaxlib>=0.4.30
 grain

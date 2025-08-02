@@ -1,12 +1,14 @@
-"""F5-TTS JAX HTTP API server."""
+"""F5-TTS JAX HTTP API server with streaming support."""
 
 import json
 import logging
 import time
+import asyncio
+from contextlib import asynccontextmanager
 from typing import Sequence, Optional, Union
 from absl import app as abslapp
 from absl import flags
-from fastapi import APIRouter, Response, HTTPException
+from fastapi import APIRouter, Response, HTTPException, FastAPI
 import fastapi
 from fastapi.responses import StreamingResponse
 import uvicorn
@@ -37,6 +39,10 @@ import base64
 import tempfile
 import os
 
+# Import new engine components
+from tts_engine import TTSEngine, TTSEngineMode, OnlineChannel
+from inference_types import OnlineTTSRequest, TTSResponse
+
 flags.DEFINE_string("host", "0.0.0.0", "server host address")
 flags.DEFINE_integer("port", 8000, "http server port")
 flags.DEFINE_string(
@@ -52,8 +58,51 @@ MAX_INFERENCE_STEPS = 100
 BUCKET_SIZES = sorted([4, 8, 16, 32, 64])
 MAX_CHUNKS = BUCKET_SIZES[-1]
 
-# Global orchestrator for F5-TTS models
+# Global orchestrator and engine for F5-TTS models
 f5_orchestrator = None
+tts_engine = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan management."""
+    global f5_orchestrator, tts_engine
+    
+    # Initialize F5-TTS orchestrator
+    print("Initializing F5-TTS orchestrator...")
+    config = pyconfig.config
+    f5_orchestrator = F5TTSOrchestrator(config)
+    
+    # Create device mesh
+    devices = jax.devices()
+    mesh = create_device_mesh(
+        devices=devices,
+        num_slices=1,
+        num_hosts_per_slice=1,
+        num_devices_per_host=len(devices),
+    )
+    
+    # Initialize TTS engine
+    print("Initializing TTS engine...")
+    loop = asyncio.get_running_loop()
+    app.state.req_queue = asyncio.Queue()
+    
+    tts_engine = TTSEngine(
+        mode=TTSEngineMode.ONLINE,
+        mesh=mesh,
+        orchestrator=f5_orchestrator,
+        max_concurrent_requests=4
+    )
+    
+    # Start the engine
+    tts_engine.start()
+    
+    yield
+    
+    # Cleanup
+    if tts_engine:
+        tts_engine.stop()
+    print("TTS engine stopped")
 
 # --- Pydantic Models for API ---
 class TTSRequest(BaseModel):
@@ -85,16 +134,92 @@ def root():
 @router.get("/v1/health")
 async def health() -> Response:
     """Health check."""
-    is_live = f5_orchestrator is not None and f5_orchestrator.is_ready()
+    is_live = (
+        f5_orchestrator is not None and f5_orchestrator.is_ready() and
+        tts_engine is not None
+    )
     return Response(
         content=json.dumps({"is_live": str(is_live)}, indent=4),
         media_type="application/json",
         status_code=200,
     )
 
+async def streaming_audio_chunks(res_queue: asyncio.Queue[TTSResponse]):
+    """Stream audio chunks from the TTS engine."""
+    while True:
+        res: TTSResponse | None = await res_queue.get()
+        if not res:
+            break
+        
+        if res.audio_chunk:
+            # Encode audio chunk as base64 for JSON streaming
+            audio_base64 = base64.b64encode(res.audio_chunk).decode('utf-8')
+            
+            chunk_data = {
+                "audio_chunk": audio_base64,
+                "sample_rate": res.sample_rate,
+                "is_final": res.is_final,
+                "metadata": res.metadata or {}
+            }
+            
+            # Send as Server-Sent Events format
+            yield f"data: {json.dumps(chunk_data)}\n\n"
+            
+            if res.is_final:
+                break
+
+
+@router.post("/v1/generate/stream")
+async def generate_stream(request: TTSRequest):
+    """Generate TTS audio with streaming response."""
+    global tts_engine
+    
+    if not tts_engine:
+        raise HTTPException(status_code=503, detail="TTS engine not available")
+    
+    if not request.ref_text.strip():
+        raise HTTPException(status_code=400, detail="ref_text cannot be empty")
+    
+    if not request.gen_text.strip():
+        raise HTTPException(status_code=400, detail="gen_text cannot be empty")
+    
+    if not request.ref_audio_base64.strip():
+        raise HTTPException(status_code=400, detail="ref_audio_base64 cannot be empty")
+    
+    # Create response queue
+    res_queue = asyncio.Queue()
+    
+    # Create TTS request
+    tts_request = OnlineTTSRequest(
+        ref_text=request.ref_text,
+        gen_text=request.gen_text,
+        ref_audio_base64=request.ref_audio_base64,
+        num_inference_steps=request.num_inference_steps,
+        guidance_scale=request.guidance_scale,
+        speed_factor=request.speed_factor,
+        use_sway_sampling=request.use_sway_sampling,
+        res_queue=res_queue,
+    )
+    
+    # Submit request to engine
+    await tts_engine.channel.req_queue.put(tts_request)
+    
+    # Return streaming response
+    return StreamingResponse(
+        streaming_audio_chunks(res_queue),
+        media_type="text/plain",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    )
+
+
 @router.post("/v1/generate", response_model=TTSResponse)
 async def generate(request: TTSRequest):
-    """Generate TTS audio using JSON request body"""
+    """Generate TTS audio using JSON request body (non-streaming)"""
+    global tts_engine
+    
+    if not tts_engine:
+        raise HTTPException(status_code=503, detail="TTS engine not available")
+    
     start_time = time.perf_counter()
     
     try:
@@ -102,46 +227,76 @@ async def generate(request: TTSRequest):
         if not request.ref_text or not request.ref_text.strip():
             raise HTTPException(status_code=400, detail="ref_text is required and cannot be empty")
         
-        # Decode base64 audio
-        try:
-            audio_bytes = base64.b64decode(request.ref_audio_base64)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid base64 audio data: {str(e)}")
+        if not request.gen_text.strip():
+            raise HTTPException(status_code=400, detail="gen_text cannot be empty")
         
-        # Save to temporary file and load with librosa
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
-            tmp_file.write(audio_bytes)
-            tmp_file_path = tmp_file.name
+        if not request.ref_audio_base64.strip():
+            raise HTTPException(status_code=400, detail="ref_audio_base64 cannot be empty")
         
-        try:
-            ref_audio_data, ref_sr = librosa.load(tmp_file_path, sr=None, mono=True)
-        finally:
-            os.unlink(tmp_file_path)  # Clean up temp file
+        # Create response queue
+        res_queue = asyncio.Queue()
         
-        # Generate audio using orchestrator
-        sample_rate, generated_audio, generation_time = f5_orchestrator.generate_audio(
+        # Create TTS request
+        tts_request = OnlineTTSRequest(
             ref_text=request.ref_text,
             gen_text=request.gen_text,
-            ref_audio=ref_audio_data,
-            ref_sr=ref_sr,
+            ref_audio_base64=request.ref_audio_base64,
             num_inference_steps=request.num_inference_steps,
             guidance_scale=request.guidance_scale,
             speed_factor=request.speed_factor,
-            use_sway_sampling=request.use_sway_sampling
+            use_sway_sampling=request.use_sway_sampling,
+            res_queue=res_queue,
         )
         
-        # Convert audio to base64
-        buffer = io.BytesIO()
-        sf.write(buffer, generated_audio, sample_rate, format='WAV')
-        audio_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        # Submit request to engine
+        await tts_engine.channel.req_queue.put(tts_request)
         
-        duration = len(generated_audio) / sample_rate
+        # Collect all audio chunks
+        audio_chunks = []
+        sample_rate = None
+        generation_time = 0.0
+        
+        while True:
+            res: TTSResponse | None = await res_queue.get()
+            if not res:
+                break
+                
+            if res.audio_chunk:
+                audio_chunks.append(res.audio_chunk)
+                if sample_rate is None:
+                    sample_rate = res.sample_rate
+                
+                if res.is_final and res.metadata:
+                    generation_time = res.metadata.get("generation_time", 0.0)
+                    break
+        
+        if not audio_chunks:
+            raise HTTPException(status_code=500, detail="No audio generated")
+        
+        # Combine all audio chunks
+        combined_audio = b''.join(audio_chunks)
+        audio_base64 = base64.b64encode(combined_audio).decode('utf-8')
+        
+        # Calculate duration from the combined audio
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+            tmp_file.write(combined_audio)
+            tmp_file.flush()
+            
+            try:
+                audio_data, _ = librosa.load(tmp_file.name, sr=None)
+                duration = len(audio_data) / sample_rate if sample_rate else 0.0
+            except:
+                duration = 0.0
+            finally:
+                os.unlink(tmp_file.name)
+        
+        total_time = time.perf_counter() - start_time
         
         return TTSResponse(
             audio_base64=audio_base64,
-            sample_rate=sample_rate,
+            sample_rate=sample_rate or 24000,
             duration=duration,
-            generation_time=generation_time
+            generation_time=total_time
         )
         
     except HTTPException:
@@ -516,11 +671,7 @@ class F5TTSOrchestrator:
 
 
 def server(argv: Sequence[str]):
-    """Main server function."""
-    # Init Fast API.
-    app = fastapi.FastAPI(title="F5-TTS HTTP Server", version="1.0.0")
-    app.include_router(router)
-    
+    """Start the F5-TTS HTTP server with streaming support."""
     # Initialize pyconfig with command line arguments
     pyconfig.initialize(argv)
     config = pyconfig.config
@@ -528,8 +679,14 @@ def server(argv: Sequence[str]):
     print(f"Server config: {config}")
     del argv
     
-    global f5_orchestrator
-    f5_orchestrator = F5TTSOrchestrator(config=config)
+    # Create FastAPI app with lifespan management
+    app = FastAPI(
+        title="F5-TTS HTTP Server with Streaming",
+        description="F5-TTS inference server with streaming audio generation support",
+        version="2.0.0",
+        lifespan=lifespan
+    )
+    app.include_router(router)
     
     # Start uvicorn http server.
     uvicorn.run(
